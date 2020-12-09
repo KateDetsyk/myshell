@@ -9,6 +9,7 @@
 
 
 std::vector<std::string> FILES;
+int STATUS = 0;
 
 //Y[es]/N[o]/A[ll]/C[cancel]
 char process_answer(const std::string& file) {
@@ -32,11 +33,11 @@ std::string get_base_name(std::string& file) {
     return boost::filesystem::path(file).filename().string();
 }
 
-static int get_info(const char *fpath, const struct stat *st, int tflag, struct FTW *ftwbuf) {
+static int get_entries(const char *fpath, const struct stat *st, int tflag, struct FTW *ftwbuf) {
     if (tflag == FTW_DNR) {
         std::cerr << "mycp: No permission to read " << fpath << std::endl;
-//        STATUS = -1;
-        return 0;
+        STATUS = -1;
+//        return 0;
     }
     if (tflag == FTW_F || ftwbuf->level > 0) {
         FILES.emplace_back(fpath);
@@ -44,47 +45,35 @@ static int get_info(const char *fpath, const struct stat *st, int tflag, struct 
     return 0;
 }
 
-int long_path_hendel(std::string& file) {
+size_t check_long_path(std::string& file) {
     if (boost::starts_with(file, "/")) { file.erase(0, 1); }
     if (boost::algorithm::ends_with(file, "/")) { file.pop_back(); }
     std::string base_name = get_base_name(file);
-    std::string path = file;
-    if (base_name != file) {
-        std::string rel_path = path.substr(0, path.size() - base_name.size());
-        return rel_path.size();
-    }
-    return 0;
+    return base_name != file ? file.size() - base_name.size() : 0;
 }
 
-void copy_dir_recursively (std::string& file, std::string& destination) {
-    //make dict with files
+void copy_dir_recursively(std::string& file, std::string& destination) {
+    //make dict with files then -- copy every entry to the target in correct order
     int flags = FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL;
-    if (nftw(const_cast<char *>(file.c_str()), get_info, 1, flags) == -1) {
-        perror("nftw");//        STATUS = -1;
+    if (nftw(const_cast<char *>(file.c_str()), get_entries, 1, flags) == -1) {
+        perror("nftw");
+        STATUS = -1;
     } else {
         std::string path = destination;
         path += "/";
-        int len = long_path_hendel(file);
-        if (len) {
-            std::cout << len << std:: endl;
-            std::string base_path = file.substr(len-1, file.size() - 1);
-            path += base_path;
-        } else {
-            path += file;
-        }
-        if (boost::filesystem::exists(path)) {    //if we enter this function we can overwrite
-            boost::filesystem::remove_all(path);
-        }
+        size_t len = check_long_path(file);
+        // if target to copy is a long path to file "/files/dir/d/target", when we add this path to destination
+        // we need just "target" -- "destination/target"; not "destination/files/dir/d/target"
+        (len) ? path += file.substr(len - 1, file.size() - 1) : path += file;
+
+        //if we enter this function we can overwrite
+        if (boost::filesystem::exists(path)) { boost::filesystem::remove_all(path); }
         boost::filesystem::copy_directory(file, path); // we know that it's dir
         for (auto &entry : FILES) {
             path = destination;
             path += "/";
-            if (len) {
-                std::string base_path = entry.substr(len-1, entry.size() - 1);
-                path += base_path;
-            } else {
-                path += entry;
-            }
+            (len) ? path += entry.substr(len - 1, entry.size() - 1) : path += entry;
+
             if (boost::filesystem::is_directory(entry)) {
                 boost::filesystem::copy_directory(entry, path);
             } else {
@@ -96,7 +85,6 @@ void copy_dir_recursively (std::string& file, std::string& destination) {
 }
 
 int main(int argc, char* argv[]) {
-    int STATUS = 0;
     bool copy_all = false;
     namespace po = boost::program_options;
     po::options_description visible("Supported options");
@@ -116,13 +104,6 @@ int main(int argc, char* argv[]) {
     po::store(po::command_line_parser(argc, argv).options(all).positional(positional).run(), vm);
     po::notify(vm);
 
-
-//    boost::filesystem::path parentPath("/home/user1/");
-//    boost::filesystem::path childPath("/home/user1/Downloads/Books");
-//    boost::filesystem::path relativePath = boost::filesystem::relative(childPath, parentPath);
-//    std::cout << relativePath << std::endl;
-
-
     if (vm.count("help")) {
         std::cout << "Use : mycp [-h|--help] [-f] -R  <dir_or_file_1> <dir_or_file_2> <dir_or_file_3>... <dir>"
                   << std::endl;
@@ -139,11 +120,14 @@ int main(int argc, char* argv[]) {
     std::string destination = files.back(); // last one is always a destination
     files.pop_back();
 
+    if (!boost::filesystem::exists(destination)) {
+        std::cerr << "mycp: incorrect argument. Destination \'" << destination << "\' doesn't exist." << std::endl;
+        exit(EXIT_FAILURE);
+    }
     if (files.size() > 1 && !boost::filesystem::is_directory(destination)) {
         std::cerr << "mycp: incorrect argument. Destination \'" << destination << "\' isn't a directory." << std::endl;
         exit(EXIT_FAILURE);
     }
-
 
     // mycp [-h|--help] [-f] <file1> <file2>
     std::string path;
@@ -226,7 +210,7 @@ int main(int argc, char* argv[]) {
                         boost::filesystem::copy_file(file, path,
                                 boost::filesystem::copy_option::overwrite_if_exists);
                     } else if (answer == 'a') {
-                        copy_all == true;
+                        copy_all = true;
                         boost::filesystem::copy_file(file, path,
                                 boost::filesystem::copy_option::overwrite_if_exists);
                     } else if (answer == 'n') {
@@ -260,7 +244,7 @@ int main(int argc, char* argv[]) {
                                     boost::filesystem::copy_option::overwrite_if_exists);
                         }
                     } else if (answer == 'a') {
-                        copy_all == true;
+                        copy_all = true;
                         if (boost::filesystem::is_directory(file)) {
                             copy_dir_recursively(file, destination);
                         } else {
