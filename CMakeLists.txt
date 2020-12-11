@@ -23,3 +23,6 @@ target_link_libraries(mycp ${Boost_LIBRARIES})
 
 add_executable(myrm external_commands/myrm.cpp)
 target_link_libraries(myrm ${Boost_LIBRARIES})
+
+add_executable(mymv external_commands/mymv.cpp)
+target_link_libraries(mymv ${Boost_LIBRARIES})

@@ -45,8 +45,8 @@ static int get_entries(const char *fpath, const struct stat *st, int tflag, stru
 }
 
 size_t check_long_path(std::string& file) {
-    if (boost::starts_with(file, "/")) { file.erase(0, 1); }
-    if (boost::algorithm::ends_with(file, "/")) { file.pop_back(); }
+    while (boost::starts_with(file, "/")) { file.erase(0, 1); }
+    while (boost::algorithm::ends_with(file, "/")) { file.pop_back(); } // mb no sense to do it
     std::string base_name = get_base_name(file);
     return base_name != file ? file.size() - base_name.size() : 0;
 }
