@@ -5,9 +5,6 @@
 #include <boost/filesystem/path.hpp>
 
 
-int STATUS = 0;
-
-
 std::string get_base_name(std::string& file) {
     return boost::filesystem::path(file).filename().string();
 }
@@ -35,6 +32,7 @@ mymv [-h|--help] [-f] <oldfile> <newfile>
 mymv [-h|--help] [-f] <oldfile_or_dir_1> <oldfile_or_dir_oldfile2> <oldfile_or_dir_oldfile3>.... <dir>
 */
 int main(int argc, char* argv[]) {
+    int STATUS = 0;
     bool move_all = false;
 
     namespace po = boost::program_options;
@@ -100,15 +98,19 @@ int main(int argc, char* argv[]) {
         if (boost::filesystem::exists(path) && !vm.count("-f") && !move_all) {
             char answer = process_answer(path);
             if (answer == 'y') {
+                boost::filesystem::remove_all(path);
                 boost::filesystem::rename(file, path);
             } else if (answer == 'n') {
                 continue;
             } else if (answer == 'a') {
                 move_all = true;
+                boost::filesystem::remove_all(path);
+                boost::filesystem::rename(file, path);
             } else {
                 break;
             }
         } else {
+            if (boost::filesystem::exists(path)) { boost::filesystem::remove_all(path); }
             boost::filesystem::rename(file, path);
         }
     }
