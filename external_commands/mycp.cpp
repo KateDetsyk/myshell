@@ -37,7 +37,6 @@ static int get_entries(const char *fpath, const struct stat *st, int tflag, stru
     if (tflag == FTW_DNR) {
         std::cerr << "mycp: No permission to read " << fpath << std::endl;
         STATUS = -1;
-//        return 0;
     }
     if (tflag == FTW_F || ftwbuf->level > 0) {
         FILES.emplace_back(fpath);
@@ -94,7 +93,7 @@ int main(int argc, char* argv[]) {
 
     po::options_description invisible("invisible opptions.");
     invisible.add_options() ("files", po::value<std::vector<std::string>>(),
-            "files to copy and destination.");
+                             "files to copy and destination.");
 
     po::options_description all("All options");
     all.add(visible).add(invisible);
@@ -132,137 +131,87 @@ int main(int argc, char* argv[]) {
     // mycp [-h|--help] [-f] <file1> <file2>
     std::string path;
     if (files.size() == 1) {
-        std::string file = files[0];
-        if (boost::filesystem::is_directory(file) && !boost::filesystem::is_directory(destination)) {
+        if (boost::filesystem::is_directory(files[0]) && !boost::filesystem::is_directory(destination)) {
             std::cerr << "mycp:  cannot overwrite non-directory \'" << destination << "\' with directory \'" <<
-                            file << "\'." << std::endl;
-            return -1;
-        } else if (!boost::filesystem::exists(file)) {
-            std::cerr << "mycp: cannot stat \'" << file << "\': No such file or directory." << std::endl;
+                      files[0] << "\'." << std::endl;
             return -1;
         }
-        if (!vm.count("recursion")) {
+    }
+    if (!vm.count("recursion")) { //NOOOOO recursion
+        for (auto& file : files) {
             if (boost::filesystem::is_directory(file)) {
                 std::cerr << "mycp: -R not specified; omitting directory \'" << file << "\'." << std::endl;
-                return -1;
+                STATUS = -1;
+                continue;
+            } else if (!boost::filesystem::exists(file)) {
+                std::cerr << "mycp: cannot stat \'" << file << "\': No such file or directory." << std::endl;
+                STATUS = -1;
+                continue;
             }
             path = destination;
             if (boost::filesystem::is_directory(destination)) {
                 path += "/";
                 path += get_base_name(file);
             }
-            if (boost::filesystem::exists(path) && !vm.count("-f")) {
+            if (boost::filesystem::exists(path) && !vm.count("-f") && !copy_all) {
                 char answer = process_answer(path);
-                if (answer == 'y' || answer == 'a') {
-                    boost::filesystem::copy_file(file, path, boost::filesystem::copy_option::overwrite_if_exists);
+                if (answer == 'y') {
+                    boost::filesystem::copy_file(file, path,
+                                                 boost::filesystem::copy_option::overwrite_if_exists);
+                } else if (answer == 'a') {
+                    copy_all = true;
+                    boost::filesystem::copy_file(file, path,
+                                                 boost::filesystem::copy_option::overwrite_if_exists);
+                } else if (answer == 'n') {
+                    continue;
                 } else {
-                    return 0;
+                    break;
                 }
             } else {
-                boost::filesystem::copy_file(file, path, boost::filesystem::copy_option::overwrite_if_exists);
+                boost::filesystem::copy_file(file, path,
+                                             boost::filesystem::copy_option::overwrite_if_exists);
             }
-        } else {
+        }
+    } else {
+        for (auto& file : files) {
+            if (!boost::filesystem::exists(file)) {
+                std::cerr << "mycp: cannot stat \'" << file << "\': No such file or directory." << std::endl;
+                STATUS = -1;
+                continue;
+            }
             path = destination;
             if (boost::filesystem::is_directory(destination)) {
                 path += "/";
                 path += get_base_name(file);
             }
-            if (boost::filesystem::exists(path) && !vm.count("-f")) {
+            if (boost::filesystem::exists(path) && !vm.count("-f") && !copy_all) {
                 char answer = process_answer(path);
-                if (answer == 'y' || answer == 'a') {
+                if (answer == 'y') {
                     if (boost::filesystem::is_directory(file)) {
                         copy_dir_recursively(file, destination);
                     } else {
                         boost::filesystem::copy_file(file, path,
-                                boost::filesystem::copy_option::overwrite_if_exists);
+                                                     boost::filesystem::copy_option::overwrite_if_exists);
                     }
+                } else if (answer == 'a') {
+                    copy_all = true;
+                    if (boost::filesystem::is_directory(file)) {
+                        copy_dir_recursively(file, destination);
+                    } else {
+                        boost::filesystem::copy_file(file, path,
+                                                     boost::filesystem::copy_option::overwrite_if_exists);
+                    }
+                } else if (answer == 'n') {
+                    continue;
                 } else {
-                    return 0;
+                    break;
                 }
             } else {
                 if (boost::filesystem::is_directory(file)) {
                     copy_dir_recursively(file, destination);
                 } else {
                     boost::filesystem::copy_file(file, path,
-                            boost::filesystem::copy_option::overwrite_if_exists);
-                }
-            }
-        }
-    } else {
-        if (!vm.count("recursion")) { //NOOOOO recursion
-            for (auto& file : files) {
-                if (boost::filesystem::is_directory(file)) {
-                    std::cerr << "mycp: -R not specified; omitting directory \'" << file << "\'." << std::endl;
-                    STATUS = -1;
-                    continue;
-                } else if (!boost::filesystem::exists(file)) {
-                    std::cerr << "mycp: cannot stat \'" << file << "\': No such file or directory." << std::endl;
-                    STATUS = -1;
-                    continue;
-                }
-                path = destination;
-                path += "/";
-                path += get_base_name(file);
-
-                if (boost::filesystem::exists(path) && !vm.count("-f") && !copy_all) {
-                    char answer = process_answer(path);
-                    if (answer == 'y') {
-                        boost::filesystem::copy_file(file, path,
-                                boost::filesystem::copy_option::overwrite_if_exists);
-                    } else if (answer == 'a') {
-                        copy_all = true;
-                        boost::filesystem::copy_file(file, path,
-                                boost::filesystem::copy_option::overwrite_if_exists);
-                    } else if (answer == 'n') {
-                        continue;
-                    } else {
-                        break;
-                    }
-                } else {
-                    boost::filesystem::copy_file(file, path,
-                            boost::filesystem::copy_option::overwrite_if_exists);
-                }
-            }
-        } else {
-            for (auto& file : files) {
-                if (!boost::filesystem::exists(file)) {
-                    std::cerr << "mycp: cannot stat \'" << file << "\': No such file or directory." << std::endl;
-                    STATUS = -1;
-                    continue;
-                }
-                path = destination;
-                path += "/";
-                path += get_base_name(file);
-
-                if (boost::filesystem::exists(path) && !vm.count("-f") && !copy_all) {
-                    char answer = process_answer(path);
-                    if (answer == 'y') {
-                        if (boost::filesystem::is_directory(file)) {
-                            copy_dir_recursively(file, destination);
-                        } else {
-                            boost::filesystem::copy_file(file, path,
-                                    boost::filesystem::copy_option::overwrite_if_exists);
-                        }
-                    } else if (answer == 'a') {
-                        copy_all = true;
-                        if (boost::filesystem::is_directory(file)) {
-                            copy_dir_recursively(file, destination);
-                        } else {
-                            boost::filesystem::copy_file(file, path,
-                                    boost::filesystem::copy_option::overwrite_if_exists);
-                        }
-                    } else if (answer == 'n') {
-                        continue;
-                    } else {
-                        break;
-                    }
-                } else {
-                    if (boost::filesystem::is_directory(file)) {
-                        copy_dir_recursively(file, destination);
-                    } else {
-                        boost::filesystem::copy_file(file, path,
-                                boost::filesystem::copy_option::overwrite_if_exists);
-                    }
+                                                 boost::filesystem::copy_option::overwrite_if_exists);
                 }
             }
         }
